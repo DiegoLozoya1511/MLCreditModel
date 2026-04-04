@@ -6,10 +6,19 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
 
-from visualization import plot_interest_rate_distribution
 
-
-def out_of_fold_predictions(pipeline, X, y):
+def out_of_fold_predictions(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
+    """
+    Generate out-of-fold predictions for PD estimation.
+    
+    Parameters:
+        pipeline: sklearn Pipeline object containing the model and preprocessing steps
+        X: pandas DataFrame of features
+        y: pandas Series of target variable (binary)
+    
+    Returns:
+        PD_oof: numpy array of out-of-fold predicted probabilities for the positive class
+    """
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     PD_oof = np.zeros(len(X))
 
@@ -20,11 +29,30 @@ def out_of_fold_predictions(pipeline, X, y):
     return PD_oof
 
 
-def compute_risk_premium(PD_i, LGD):
+def compute_risk_premium(PD_i: pd.Series, LGD: int) -> pd.Series:
+    """
+    Calculate risk premium using the formula: Risk Premium = (PD_i * LGD) / (1 - PD_i)
+    
+    Parameters:
+        PD_i: pandas Series of predicted probabilities of default for each individual
+        LGD: Loss Given Default (assumed constant for the industry)
+        
+    Returns:
+        risk_premium: pandas Series of calculated risk premiums for each individual
+    """
     return (PD_i * LGD) / (1 - PD_i.clip(upper=0.9999))
 
 
-def interest_rate_creation(risk_premium):
+def interest_rate_creation(risk_premium: pd.Series) -> pd.DataFrame:
+    """
+    Create a DataFrame for interest rates based on risk premium and fixed costs.
+    
+    Parameters:
+        risk_premium: pandas Series of calculated risk premiums for each individual
+        
+    Returns:
+        InterestRate: pandas DataFrame containing the components of the interest rate and total interest rate
+    """
     BASE_RATE = 0.0675
     INFLATION_RATE = 0.0450
     LIQUIDITY_PREMIUM = 0.02
@@ -57,7 +85,7 @@ def interest_rate_creation(risk_premium):
 
 
 def calculate_interest_rate():
-
+    """Main function to calculate interest rates based on PD and risk premium."""
     # Read the dataset
     data = pd.read_csv('Data/UCI_Credit_Card.csv')
 
@@ -79,8 +107,8 @@ def calculate_interest_rate():
     PD_oof = out_of_fold_predictions(pipeline, X, y)
     X['PD_i'] = PD_oof
 
-    # Calculate risk premium using the formula: Risk Premium = (PD_i * LGD) / (1 - PD_i)
-    LGD = 0.75  # Industry asumption
+    # Calculate risk premium using the formula
+    LGD = 0.75 
     risk_premium = compute_risk_premium(X['PD_i'], LGD)
 
     # Create interest rate DataFrame
@@ -88,9 +116,6 @@ def calculate_interest_rate():
 
     # Write results to CSV
     InterestRate.to_csv('Data/InterestRate.csv', index=False)
-
-    # Interest Rate Distribution Plot
-    plot_interest_rate_distribution(InterestRate)
 
     print("Out-of-Fold Predicted Probabilities (PD):")
     print(X.head())
