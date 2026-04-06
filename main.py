@@ -3,7 +3,7 @@ import pandas as pd
 from fitter import model_fitter
 from utils import split_scale_pca
 from CreditModel import get_predictions, compute_expected_pnl, realized_pnl
-from visualization import plot_interest_rate_distribution
+from visualization import plot_interest_rate_distribution, plot_thresholds_distribution, plot_roc_curve_train_val, plot_roc_curve_test, plot_pnl_distribution_comparisson, plot_confusion_matrix
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
     
     # === Model fitting ===
     # De-comment the line below to fit the model and save it to disk.
-    # model_fitter(X_train, y_train)
+    #model_fitter(X_train, y_train)
     
     # === Credit Model ===
     # Load fitted model
@@ -73,6 +73,24 @@ def main():
     # === Plots ===
     plot_interest_rate_distribution(interest_rate_df)
     
+    plot_thresholds_distribution(train_thresholds, train_probabilities, 'Train')
+    plot_thresholds_distribution(val_thresholds, val_probabilities, 'Validation')
+    #plot_thresholds_distribution(test_thresholds, test_probabilities, 'Test')
+    
+    plot_roc_curve_train_val(y_train, train_probabilities, y_val, val_probabilities)
+    #plot_roc_curve_test(y_test, test_probabilities)
+    
+    plot_pnl_distribution_comparisson(train_expected_pnl, train_realized_pnl, 'Train')    
+    plot_pnl_distribution_comparisson(val_expected_pnl, val_realized_pnl, 'Validation')
+    #plot_pnl_distribution_comparisson(test_expected_pnl, test_realized_pnl, 'Test')
+    
+    train_class_report = plot_confusion_matrix(train_predictions, y_train, 'Train')
+    val_class_report = plot_confusion_matrix(val_predictions, y_val, 'Validation')
+    #test_class_report = plot_confusion_matrix(test_predictions, y_test, 'Test')
+    
+    print(f"\nTrain Classification Report:\n{train_class_report}")
+    print(f"\nValidation Classification Report:\n{val_class_report}")
+    #print(f"\nTest Classification Report:\n{test_class_report}")
 
 if __name__ == "__main__":
     main()
