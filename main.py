@@ -1,7 +1,7 @@
 import joblib
 import pandas as pd
 
-from utils import split_scale_pca, val_eval_cal_split
+from utils import split_data, val_eval_cal_split
 from fitter import model_fitter, model_calibrator
 from CreditModel import get_predictions, expected_pnl, realized_pnl
 from visualization import plot_interest_rate_distribution, plot_thresholds_distribution, plot_roc_curve_train_val, plot_roc_curve_test, plot_confusion_matrix, portfolio_metrics
@@ -18,9 +18,8 @@ def main():
     X = data.copy().drop(columns=['ID', target])
     
     # === Data preprocessing ===
-    # Split data, scale features, and apply PCA. 
-    # r, EAD and RV are passed to guarantee alignment but are not scaled or PCA-transformed.
-    results = split_scale_pca(X, y, interest_rate_df['TotalInterestRate'])
+    # Split data (X, y, r, EAD & RV) into train, validation and test sets.
+    results = split_data(X, y, interest_rate_df['TotalInterestRate'])
     
     X_train, X_val, X_test = results["X_train"], results["X_val"], results["X_test"]
     y_train, y_val, y_test = results["y_train"], results["y_val"], results["y_test"]
