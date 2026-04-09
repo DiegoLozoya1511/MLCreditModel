@@ -24,7 +24,7 @@ def split_data(
             X_train, X_val, X_test       -> np.ndarray
             y_train, y_val, y_test       -> np.ndarray
             EAD_train, EAD_val, EAD_test -> np.ndarray
-            RV_train, RV_val, RV_test    -> np.ndarray
+            RB_train, RB_val, RB_test    -> np.ndarray
     """
 
     # Split  (train | val | test)
@@ -51,9 +51,9 @@ def split_data(
     test_EAD = X_test['BILL_AMT1']
 
     # Get splitted Revolving Balance (RV)
-    train_RV = (X_train['BILL_AMT1'] - X_train['PAY_AMT1']).clip(lower=0)
-    val_RV = (X_val['BILL_AMT1'] - X_val['PAY_AMT1']).clip(lower=0)
-    test_RV = (X_test['BILL_AMT1'] - X_test['PAY_AMT1']).clip(lower=0)
+    train_RB = (X_train['BILL_AMT1'] - X_train['PAY_AMT1']).clip(lower=0)
+    val_RB = (X_val['BILL_AMT1'] - X_val['PAY_AMT1']).clip(lower=0)
+    test_RB = (X_test['BILL_AMT1'] - X_test['PAY_AMT1']).clip(lower=0)
 
     print(
         f"\nSizes — train: {len(y_train)}, val: {len(y_val)}, test: {len(y_test)}"
@@ -69,13 +69,13 @@ def split_data(
         "EAD_train": train_EAD.values,
         "EAD_val":   val_EAD.values,
         "EAD_test":  test_EAD.values,
-        "RV_train":  train_RV.values,
-        "RV_val":    val_RV.values,
-        "RV_test":   test_RV.values,
+        "RB_train":  train_RB.values,
+        "RB_val":    val_RB.values,
+        "RB_test":   test_RB.values,
     }
 
 
-def val_eval_cal_split(X_val: pd.DataFrame, y_val: pd.Series, EAD_val: pd.Series, RV_val: pd.Series, val_size: float = 0.3, random_state: int = 42) -> dict:
+def val_eval_cal_split(X_val: pd.DataFrame, y_val: pd.Series, EAD_val: pd.Series, RB_val: pd.Series, val_size: float = 0.3, random_state: int = 42) -> dict:
     """
     Split the validation set into a smaller validation set for model evaluation and a calibration set for probability calibration.
 
@@ -83,19 +83,19 @@ def val_eval_cal_split(X_val: pd.DataFrame, y_val: pd.Series, EAD_val: pd.Series
         X_val : pd.DataFrame - Validation features.
         y_val : pd.Series - Validation target variable.
         EAD_val : pd.Series - Validation exposure at default.
-        RV_val : pd.Series - Validation revolving balance.
+        RB_val : pd.Series - Validation revolving balance.
         val_size : float - Proportion of the original validation set to use for model evaluation (default 0.5).
         random_state : int - Random seed for reproducibility.
 
     Returns:
         dict with keys:
-            X_val_eval, y_val_eval, EAD_val_eval, RV_val_eval   -> subsets for model evaluation
-            X_val_cal, y_val_cal, EAD_val_cal, RV_val_cal -> subsets for calibration
+            X_val_eval, y_val_eval, EAD_val_eval, RB_val_eval   -> subsets for model evaluation
+            X_val_cal, y_val_cal, EAD_val_cal, RB_val_cal -> subsets for calibration
     """
     eval_ratio_adjusted = val_size
 
-    X_val_eval, X_val_cal, y_val_eval, y_val_cal, EAD_val_eval, EAD_val_cal, RV_val_eval, RV_val_cal = train_test_split(
-        X_val, y_val, EAD_val, RV_val,
+    X_val_eval, X_val_cal, y_val_eval, y_val_cal, EAD_val_eval, EAD_val_cal, RB_val_eval, RB_val_cal = train_test_split(
+        X_val, y_val, EAD_val, RB_val,
         test_size=eval_ratio_adjusted,
         stratify=y_val,
         random_state=random_state,
@@ -109,9 +109,9 @@ def val_eval_cal_split(X_val: pd.DataFrame, y_val: pd.Series, EAD_val: pd.Series
         "X_val_eval": X_val_eval,
         "y_val_eval": y_val_eval,
         "EAD_val_eval": EAD_val_eval,
-        "RV_val_eval": RV_val_eval,
+        "RB_val_eval": RB_val_eval,
         "X_val_cal": X_val_cal,
         "y_val_cal": y_val_cal,
         "EAD_val_cal": EAD_val_cal,
-        "RV_val_cal": RV_val_cal,
+        "RB_val_cal": RB_val_cal,
     }

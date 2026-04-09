@@ -107,8 +107,15 @@ def bucket_summary(df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def build_rates(PD, LGD=0.75, n_buckets=5):
-    """Helper function to build interest rates for each client based on PD and risk premium."""
+def build_rates(PD: pd.Series, LGD: int = 0.75, n_buckets: int = 5) -> pd.DataFrame:
+    """
+    Helper function to build interest rates for each client based on PD and risk premium.
+    
+    Parameters:
+        PD: pandas Series of predicted probabilities of default for each individual
+        LGD: Loss Given Default (default 0.75)
+        n_buckets: number of pricing buckets to discretize into (default 5)
+    """
     df = interest_rate_creation(PD * LGD, PD)
     df = discretize_into_buckets(df, n_buckets=n_buckets)
     return df

@@ -1,11 +1,11 @@
 import joblib
 import pandas as pd
 
+from visualization import *
 from utils import split_data, val_eval_cal_split
 from fitter import model_fitter, model_calibrator
 from InterestRate import build_rates, bucket_summary
 from CreditModel import get_predictions, realized_pnl, benchmark_pnl
-from visualization import plot_interest_rate_distribution, plot_thresholds_distribution, plot_roc_curve_train_val, plot_roc_curve_test, plot_confusion_matrix, interest_rate_summary, portfolio_metrics
 
 
 def main():
@@ -24,15 +24,15 @@ def main():
     X_train, X_val, X_test = results["X_train"], results["X_val"], results["X_test"]
     y_train, y_val, y_test = results["y_train"], results["y_val"], results["y_test"]
     EAD_train, EAD_val, EAD_test = results["EAD_train"], results["EAD_val"], results["EAD_test"]
-    RV_train, RV_val, RV_test = results["RV_train"], results["RV_val"], results["RV_test"]
+    RB_train, RB_val, RB_test = results["RB_train"], results["RB_val"], results["RB_test"]
 
     # Split validation set into evaluation and calibration subsets for proper model calibration and evaluation without data leakage.
-    val_results = val_eval_cal_split(X_val, y_val, EAD_val, RV_val)
+    val_results = val_eval_cal_split(X_val, y_val, EAD_val, RB_val)
 
     X_val_eval, X_val_cal = val_results["X_val_eval"], val_results["X_val_cal"]
     y_val_eval, y_val_cal = val_results["y_val_eval"], val_results["y_val_cal"]
     EAD_val_eval = val_results["EAD_val_eval"]
-    RV_val_eval = val_results["RV_val_eval"]
+    RB_val_eval = val_results["RB_val_eval"]
 
     # === Model fitting ===
     # Change RETAIN to True to fit and calibrate the model. Set to False to load pre-fitted and calibrated model from disk.
@@ -65,23 +65,23 @@ def main():
 
     # --- Predictions ---
     train_probabilities, train_predictions, train_thresholds = get_predictions(
-        model, X_train, r_train, RV_train, EAD_train)
+        model, X_train, r_train, RB_train, EAD_train)
     val_probabilities, val_predictions, val_thresholds = get_predictions(
-        model, X_val_eval, r_val_eval, RV_val_eval, EAD_val_eval)
-    # test_probabilities, test_predictions, test_thresholds = get_predictions(model, X_test, r_test, RV_test, EAD_test)
+        model, X_val_eval, r_val_eval, RB_val_eval, EAD_val_eval)
+    # test_probabilities, test_predictions, test_thresholds = get_predictions(model, X_test, r_test, RB_test, EAD_test)
 
     # --- Realized PnL Calculation ---
     train_realized_pnl = realized_pnl(
-        r_train, RV_train, EAD_train, train_predictions, y_train)
+        r_train, RB_train, EAD_train, train_predictions, y_train)
     val_realized_pnl = realized_pnl(
-        r_val_eval, RV_val_eval, EAD_val_eval, val_predictions, y_val_eval)
-    # test_realized_pnl = realized_pnl(r_test, RV_test, EAD_test, test_predictions, y_test)
+        r_val_eval, RB_val_eval, EAD_val_eval, val_predictions, y_val_eval)
+    # test_realized_pnl = realized_pnl(r_test, RB_test, EAD_test, test_predictions, y_test)
 
     # --- Benchmark PnL Calculation ---
-    train_benchmark_pnl = benchmark_pnl(r_train, RV_train, EAD_train, y_train)
+    train_benchmark_pnl = benchmark_pnl(r_train, RB_train, EAD_train, y_train)
     val_benchmark_pnl = benchmark_pnl(
-        r_val_eval, RV_val_eval, EAD_val_eval, y_val_eval)
-    # test_benchmark_pnl = benchmark_pnl(r_test, RV_test, EAD_test, y_test)
+        r_val_eval, RB_val_eval, EAD_val_eval, y_val_eval)
+    # test_benchmark_pnl = benchmark_pnl(r_test, RB_test, EAD_test, y_test)
 
     # === Results ===
     # --- Plots ---
