@@ -35,27 +35,51 @@ blue_scale = mcolors.LinearSegmentedColormap.from_list(
     [blue_colors[0], blue_colors[-1]]
 )
 
+complementary_colors = [
+    "#FFEBD9",
+    "#FFDEC1",
+    "#FFD2A8",
+    "#FFC38A",
+    "#FFB56B",
+    "#E5904A",
+    "#DE862E",
+    "#C05A00",
+    "#A55000",
+    "#824500"
+]  
 
-def plot_interest_rate_distribution(interest_rate_df):
+
+def plot_interest_rate_distribution(interest_rate_df: pd.DataFrame) -> None:
     """
-    Plot the distribution of total interest rates with a vertical line for the mean.
+    Plot the distribution of continuous interest rates colored by bucket.
 
     Parameters:
-        interest_rate_df: pandas DataFrame containing a 'TotalInterestRate' column with the total interest rates for each client.
+        interest_rate_df: pandas DataFrame containing 'TotalInterestRate', 'BucketRate' and 'Bucket' columns.
     """
+    buckets = sorted(interest_rate_df['Bucket'].unique())
+    colors  = [blue_colors[int(i * (len(blue_colors) - 1) / (len(buckets) - 1))] for i in range(len(buckets))]
+    colors = colors[::-1]
+
     plt.figure()
-    sns.kdeplot(interest_rate_df['BucketRate'], fill=True,
-                color=blue_colors[-1], label='Total Interest Rate')
+    for bucket, color in zip(buckets, colors):
+        mask        = interest_rate_df['Bucket'] == bucket
+        bucket_data = interest_rate_df.loc[mask, 'TotalInterestRate']  # continuous rate
+        bucket_rate = interest_rate_df.loc[mask, 'BucketRate'].iloc[0] # centroid for label
+
+        sns.kdeplot(bucket_data, fill=True, color=color, alpha=0.5,
+                    label=f'Bucket {bucket}: {bucket_rate:.2%}')
+
     plt.axvline(interest_rate_df['BucketRate'].mean(), color='dimgray',
-                linestyle='--', label=f'Mean Total Interest Rate: {interest_rate_df['BucketRate'].mean():.2%}')
-    plt.title('Distribution of Total Interest Rates')
+                linestyle='--', linewidth=0.8,
+                label=f'Mean Rate: {interest_rate_df["BucketRate"].mean():.2%}')
+    plt.title('Distribution of Total Interest Rates by Bucket')
     plt.xlabel('Total Interest Rate')
     plt.ylabel('Density')
     plt.legend()
     plt.show()
 
 
-def plot_thresholds_distribution(thresholds: pd.Series, y_proba: np.ndarray, set_name: str, clip_percentile: float = 0.99):
+def plot_thresholds_distribution(thresholds: pd.Series, y_proba: np.ndarray, set_name: str) -> None:
     """
     Plot the distribution of break-even thresholds and model predicted probabilities for a given dataset (train/validation/test).
 
@@ -66,21 +90,15 @@ def plot_thresholds_distribution(thresholds: pd.Series, y_proba: np.ndarray, set
     """
     y_proba = pd.Series(y_proba)
 
-    # Clip to percentile range to remove extreme tails
-    upper = np.percentile(thresholds,      clip_percentile * 100)
-    lower = np.percentile(thresholds, (1 - clip_percentile) * 100)
-
-    thresholds_clipped = thresholds.clip(lower, upper)
-
     plt.figure()
-    sns.kdeplot(thresholds_clipped, fill=True,
+    sns.kdeplot(y_proba, fill=True, alpha=0.5,
+                color=blue_colors[3],  label=f'Model PD')
+    plt.axvline(y_proba.mean(),    color=complementary_colors[3],  linestyle='--',
+                linewidth=0.9, label=f'Mean PD: {y_proba.mean():.2%}')
+    sns.kdeplot(thresholds, fill=True, alpha=0.5,
                 color=blue_colors[-1], label=f'Break-even Threshold')
-    sns.kdeplot(y_proba, fill=True,
-                color=blue_colors[2],  label=f'Model PD')
-    plt.axvline(thresholds_clipped.mean(), color='dimgray',   linestyle='--',
-                linewidth=0.8, label=f'Mean Threshold: {thresholds_clipped.mean():.2%}')
-    plt.axvline(y_proba.mean(),            color='black',     linestyle='--',
-                linewidth=0.8, label=f'Mean PD: {y_proba.mean():.2%}')
+    plt.axvline(thresholds.mean(), color=complementary_colors[-1], linestyle='--',
+                linewidth=0.9, label=f'Mean Threshold: {thresholds.mean():.2%}')
     plt.title(f'{set_name} Distribution of PD vs Break-even Threshold')
     plt.xlabel('Probability')
     plt.ylabel('Density')
@@ -88,7 +106,7 @@ def plot_thresholds_distribution(thresholds: pd.Series, y_proba: np.ndarray, set
     plt.show()
 
 
-def plot_roc_curve_train_val(y_true_train: np.ndarray, y_proba_train: np.ndarray, y_true_val: np.ndarray, y_proba_val: np.ndarray):
+def plot_roc_curve_train_val(y_true_train: np.ndarray, y_proba_train: np.ndarray, y_true_val: np.ndarray, y_proba_val: np.ndarray) -> None:
     """
     Plot ROC curves for both train and validation sets on the same plot for comparison.
 
@@ -109,8 +127,8 @@ def plot_roc_curve_train_val(y_true_train: np.ndarray, y_proba_train: np.ndarray
              color=blue_colors[-1], label=f'Train: AUC = {auc_train:.4f}')
     plt.plot(fpr_val,   tpr_val,
              color=blue_colors[2],  label=f'Validation: AUC = {auc_val:.4f}')
-    plt.fill_between(fpr_train, tpr_train, alpha=0.15, color=blue_colors[-1])
-    plt.fill_between(fpr_val, tpr_val, alpha=0.3, color=blue_colors[2])
+    plt.fill_between(fpr_train, tpr_train, alpha=0.25, color=blue_colors[-1])
+    plt.fill_between(fpr_val, tpr_val, alpha=0.25, color=blue_colors[2])
     plt.plot([0, 1], [0, 1], color='dimgray', linestyle='--',
              linewidth=0.8, label='Random Classifier')
     plt.xlabel('False Positive Rate')
@@ -120,7 +138,7 @@ def plot_roc_curve_train_val(y_true_train: np.ndarray, y_proba_train: np.ndarray
     plt.show()
 
 
-def plot_roc_curve_test(y_true: np.ndarray, y_proba: np.ndarray):
+def plot_roc_curve_test(y_true: np.ndarray, y_proba: np.ndarray) -> None:
     """
     Plot ROC curve for the test set.
 

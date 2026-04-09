@@ -18,7 +18,7 @@ def main():
     X = data.copy().drop(columns=['ID', target])
 
     # === Data preprocessing ===
-    # Split data (X, y, EAD & RV) into train, validation and test sets.
+    # Split data (X, y, EAD & RB) into train, validation and test sets.
     results = split_data(X, y)
 
     X_train, X_val, X_test = results["X_train"], results["X_val"], results["X_test"]
