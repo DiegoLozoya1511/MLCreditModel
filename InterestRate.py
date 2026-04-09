@@ -1,10 +1,10 @@
+import joblib
 import numpy as np
 import pandas as pd
 
+from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
-from sklearn.linear_model import LogisticRegression
 
 
 def out_of_fold_predictions(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
@@ -29,21 +29,7 @@ def out_of_fold_predictions(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series) -
     return PD_oof
 
 
-def compute_risk_premium(PD_i: pd.Series, LGD: int) -> pd.Series:
-    """
-    Calculate risk premium using the formula: Risk Premium = (PD_i * LGD) / (1 - PD_i)
-    
-    Parameters:
-        PD_i: pandas Series of predicted probabilities of default for each individual
-        LGD: Loss Given Default (assumed constant for the industry)
-        
-    Returns:
-        risk_premium: pandas Series of calculated risk premiums for each individual
-    """
-    return (PD_i * LGD) / (1 - PD_i.clip(upper=0.9999))
-
-
-def interest_rate_creation(risk_premium: pd.Series) -> pd.DataFrame:
+def interest_rate_creation(risk_premium: pd.Series, PD_i: pd.Series) -> pd.DataFrame:
     """
     Create a DataFrame for interest rates based on risk premium and fixed costs.
     
@@ -53,9 +39,9 @@ def interest_rate_creation(risk_premium: pd.Series) -> pd.DataFrame:
     Returns:
         InterestRate: pandas DataFrame containing the components of the interest rate and total interest rate
     """
-    BASE_RATE = 0.0675
+    BASE_RATE = 0.035
     INFLATION_RATE = 0.0450
-    LIQUIDITY_PREMIUM = 0.02
+    LIQUIDITY_PREMIUM = 0.05
     ADMIN_COSTS = 0.07
     OPERATING_COSTS = 0.05
 
@@ -70,18 +56,81 @@ def interest_rate_creation(risk_premium: pd.Series) -> pd.DataFrame:
         'Operating Costs': OPERATING_COSTS,
     })
 
-    # CAT ceiling based on Banxico official data (Ualá, cards > $15,000 limit)
-    CAT_CAP = 1.39  # 139%
-
-    # Implied annual rate ceiling (CAT - fixed costs approximation)
-    # CAT ≈ r_i + fixed costs overhead, so r_i cap ≈ CAT_CAP - fixed costs
-    FIXED_COSTS = INFLATION_RATE + LIQUIDITY_PREMIUM + ADMIN_COSTS + OPERATING_COSTS
-    RATE_CAP = CAT_CAP - FIXED_COSTS
+    # Rate Cap based on Banxico's out-of-limit excluded cards
+    RATE_CAP = 1.00  # 100%
 
     InterestRate['TotalInterestRate'] = InterestRate.sum(
         axis=1).clip(upper=RATE_CAP)
 
+    InterestRate['PD_i'] = PD_i
+    
     return InterestRate
+
+
+def discretize_into_buckets(interest_rate_df: pd.DataFrame, n_buckets: int = 5) -> pd.DataFrame:
+    """
+    Discretize continuous interest rates into pricing buckets using 1D k-means.
+    Minimizes within-bucket variance of TotalInterestRate.
+
+    Parameters:
+        interest_rate_df: DataFrame output of interest_rate_creation()
+        n_buckets: number of pricing buckets (default 5)
+
+    Returns:
+        df: original DataFrame with added columns:
+            - 'Bucket': integer label (0 = lowest risk, K-1 = highest)
+            - 'BucketRate': the representative (centroid) rate for that bucket
+            - 'QuantizationLoss': |TotalInterestRate - BucketRate| per client
+    """
+    df = interest_rate_df.copy()
+    rates = df['TotalInterestRate'].values.reshape(-1, 1)
+
+    kmeans = KMeans(n_clusters=n_buckets, random_state=42, n_init=20)
+    kmeans.fit(rates)
+
+    # Sort cluster labels by centroid value so Bucket 0 = cheapest
+    centroids = kmeans.cluster_centers_.flatten()
+    sorted_idx = np.argsort(centroids)
+    label_map = {old: new for new, old in enumerate(sorted_idx)}
+
+    raw_labels = kmeans.labels_
+    df['Bucket'] = np.array([label_map[l] for l in raw_labels])
+    df['BucketRate'] = np.array([centroids[sorted_idx[label_map[l]]] for l in raw_labels])
+    df['QuantizationLoss'] = np.abs(df['TotalInterestRate'] - df['BucketRate'])
+
+    return df
+
+
+def bucket_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Summarize bucket composition and quantization loss.
+
+    Parameters:
+        df: DataFrame output of discretize_into_buckets()
+
+    Returns:
+        summary: DataFrame with one row per bucket showing:
+            - BucketRate: representative rate charged
+            - Count / Share: number and % of clients
+            - AvgContinuousRate: mean of TotalInterestRate within bucket
+            - AvgPD: mean PD within bucket
+            - AvgQuantizationLoss: mean |r* - r_bucket|
+            - MaxQuantizationLoss: worst-case deviation within bucket
+    """
+    summary = (
+        df.groupby('Bucket')
+        .agg(
+            BucketRate=('BucketRate', 'first'),
+            Count=('TotalInterestRate', 'count'),
+            AvgContinuousRate=('TotalInterestRate', 'mean'),
+            AvgPD=('PD_i', 'mean'),
+            AvgQuantizationLoss=('QuantizationLoss', 'mean'),
+            MaxQuantizationLoss=('QuantizationLoss', 'max'),
+        )
+        .reset_index()
+    )
+    summary['Share'] = summary['Count'] / summary['Count'].sum()
+    return summary
 
 
 def calculate_interest_rate():
@@ -94,41 +143,31 @@ def calculate_interest_rate():
     y = data[target]
 
     X = data.copy().drop(columns=['ID', target])
-
-    # Pipeline
-    pipeline = Pipeline([
-        # Scaling
-        ('scaler', StandardScaler()),
-        # Logistic Regression
-        ('model', LogisticRegression(class_weight='balanced', max_iter=1000))
-    ])
-
-    # Calculate PD using Out-of-Fold predictions
-    PD_oof = out_of_fold_predictions(pipeline, X, y)
-    X['PD_i'] = PD_oof
+    
+    model = joblib.load('Model/xgb_model_calibrated.pkl')
+    X['PD_i'] = model.predict_proba(X)[:, 1]
 
     # Calculate risk premium using the formula
     LGD = 0.75 
-    risk_premium = compute_risk_premium(X['PD_i'], LGD)
+    risk_premium = X['PD_i'] * LGD
 
     # Create interest rate DataFrame
-    InterestRate = interest_rate_creation(risk_premium)
+    InterestRate = interest_rate_creation(risk_premium, X['PD_i'])
+    
+    # Discretize into buckets
+    InterestRate = discretize_into_buckets(InterestRate, n_buckets=5)
+    summary = bucket_summary(InterestRate)
 
     # Write results to CSV
     InterestRate.to_csv('Data/InterestRate.csv', index=False)
 
-    print("Out-of-Fold Predicted Probabilities (PD):")
-    print(X.head())
-    print("\nAverage PD:", np.mean(X['PD_i'].mean()))
-    print("\nAverage Risk Premium:", np.mean(risk_premium))
-    print("\nInterest Rate DataFrame:")
-    print(InterestRate.head())
-    print("\nMax Total Interest Rate:",
-          InterestRate['TotalInterestRate'].max())
-    print("\nMin Total Interest Rate:",
-          InterestRate['TotalInterestRate'].min())
-    print("\nAverage Total Interest Rate:",
-          InterestRate['TotalInterestRate'].mean())
+    print('\nRisk Premium:')
+    print("Average PD:", np.mean(X['PD_i'].mean()))
+    print("Average Risk Premium:", np.mean(risk_premium))
+    
+    print("\nBucket Summary:")
+    print(summary.to_string(index=False))
+    print("\nAvg Quantization Loss:", InterestRate['QuantizationLoss'].mean())
 
 
 if __name__ == "__main__":

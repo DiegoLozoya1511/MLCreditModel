@@ -44,10 +44,10 @@ def plot_interest_rate_distribution(interest_rate_df):
         interest_rate_df: pandas DataFrame containing a 'TotalInterestRate' column with the total interest rates for each client.
     """
     plt.figure()
-    sns.kdeplot(interest_rate_df['TotalInterestRate'], fill=True,
+    sns.kdeplot(interest_rate_df['BucketRate'], fill=True,
                 color=blue_colors[-1], label='Total Interest Rate')
-    plt.axvline(interest_rate_df['TotalInterestRate'].mean(), color='dimgray',
-                linestyle='--', label=f'Mean Total Interest Rate: {interest_rate_df['TotalInterestRate'].mean():.2%}')
+    plt.axvline(interest_rate_df['BucketRate'].mean(), color='dimgray',
+                linestyle='--', label=f'Mean Total Interest Rate: {interest_rate_df['BucketRate'].mean():.2%}')
     plt.title('Distribution of Total Interest Rates')
     plt.xlabel('Total Interest Rate')
     plt.ylabel('Density')
