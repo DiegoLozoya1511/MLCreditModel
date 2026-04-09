@@ -56,11 +56,8 @@ def interest_rate_creation(risk_premium: pd.Series, PD_i: pd.Series) -> pd.DataF
         'Operating Costs': OPERATING_COSTS,
     })
 
-    # Rate Cap based on Banxico's out-of-limit excluded cards
-    RATE_CAP = 1.00  # 100%
-
     InterestRate['TotalInterestRate'] = InterestRate.sum(
-        axis=1).clip(upper=RATE_CAP)
+        axis=1)
 
     InterestRate['PD_i'] = PD_i
     
