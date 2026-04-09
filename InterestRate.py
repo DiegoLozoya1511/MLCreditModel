@@ -35,11 +35,12 @@ def interest_rate_creation(risk_premium: pd.Series, PD_i: pd.Series) -> pd.DataF
     
     Parameters:
         risk_premium: pandas Series of calculated risk premiums for each individual
+        PD_i: pandas Series of predicted probabilities of default for each individual
         
     Returns:
         InterestRate: pandas DataFrame containing the components of the interest rate and total interest rate
     """
-    BASE_RATE = 0.035
+    BASE_RATE = 0.025
     INFLATION_RATE = 0.0450
     LIQUIDITY_PREMIUM = 0.05
     ADMIN_COSTS = 0.07

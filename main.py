@@ -19,7 +19,7 @@ def main():
     
     # === Data preprocessing ===
     # Split data (X, y, r, EAD & RV) into train, validation and test sets.
-    results = split_data(X, y, interest_rate_df['TotalInterestRate'])
+    results = split_data(X, y, interest_rate_df['BucketRate'])
     
     X_train, X_val, X_test = results["X_train"], results["X_val"], results["X_test"]
     y_train, y_val, y_test = results["y_train"], results["y_val"], results["y_test"]
