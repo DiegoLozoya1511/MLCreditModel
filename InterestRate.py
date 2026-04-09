@@ -1,42 +1,17 @@
-import joblib
 import numpy as np
 import pandas as pd
 
 from sklearn.cluster import KMeans
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import StratifiedKFold
-
-
-def out_of_fold_predictions(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
-    """
-    Generate out-of-fold predictions for PD estimation.
-    
-    Parameters:
-        pipeline: sklearn Pipeline object containing the model and preprocessing steps
-        X: pandas DataFrame of features
-        y: pandas Series of target variable (binary)
-    
-    Returns:
-        PD_oof: numpy array of out-of-fold predicted probabilities for the positive class
-    """
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    PD_oof = np.zeros(len(X))
-
-    for train_idx, val_idx in skf.split(X, y):
-        pipeline.fit(X.iloc[train_idx], y[train_idx])
-        PD_oof[val_idx] = pipeline.predict_proba(X.iloc[val_idx])[:, 1]
-
-    return PD_oof
 
 
 def interest_rate_creation(risk_premium: pd.Series, PD_i: pd.Series) -> pd.DataFrame:
     """
     Create a DataFrame for interest rates based on risk premium and fixed costs.
-    
+
     Parameters:
         risk_premium: pandas Series of calculated risk premiums for each individual
         PD_i: pandas Series of predicted probabilities of default for each individual
-        
+
     Returns:
         InterestRate: pandas DataFrame containing the components of the interest rate and total interest rate
     """
@@ -61,7 +36,7 @@ def interest_rate_creation(risk_premium: pd.Series, PD_i: pd.Series) -> pd.DataF
         axis=1)
 
     InterestRate['PD_i'] = PD_i
-    
+
     return InterestRate
 
 
@@ -93,7 +68,8 @@ def discretize_into_buckets(interest_rate_df: pd.DataFrame, n_buckets: int = 5) 
 
     raw_labels = kmeans.labels_
     df['Bucket'] = np.array([label_map[l] for l in raw_labels])
-    df['BucketRate'] = np.array([centroids[sorted_idx[label_map[l]]] for l in raw_labels])
+    df['BucketRate'] = np.array(
+        [centroids[sorted_idx[label_map[l]]] for l in raw_labels])
     df['QuantizationLoss'] = np.abs(df['TotalInterestRate'] - df['BucketRate'])
 
     return df
@@ -131,42 +107,8 @@ def bucket_summary(df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def calculate_interest_rate():
-    """Main function to calculate interest rates based on PD and risk premium."""
-    # Read the dataset
-    data = pd.read_csv('Data/UCI_Credit_Card.csv')
-
-    # Split the dataset into features and target variable
-    target = 'default.payment.next.month'
-    y = data[target]
-
-    X = data.copy().drop(columns=['ID', target])
-    
-    model = joblib.load('Model/xgb_model_calibrated.pkl')
-    X['PD_i'] = model.predict_proba(X)[:, 1]
-
-    # Calculate risk premium using the formula
-    LGD = 0.75 
-    risk_premium = X['PD_i'] * LGD
-
-    # Create interest rate DataFrame
-    InterestRate = interest_rate_creation(risk_premium, X['PD_i'])
-    
-    # Discretize into buckets
-    InterestRate = discretize_into_buckets(InterestRate, n_buckets=5)
-    summary = bucket_summary(InterestRate)
-
-    # Write results to CSV
-    InterestRate.to_csv('Data/InterestRate.csv', index=False)
-
-    print('\nRisk Premium:')
-    print("Average PD:", np.mean(X['PD_i'].mean()))
-    print("Average Risk Premium:", np.mean(risk_premium))
-    
-    print("\nBucket Summary:")
-    print(summary.to_string(index=False))
-    print("\nAvg Quantization Loss:", InterestRate['QuantizationLoss'].mean())
-
-
-if __name__ == "__main__":
-    calculate_interest_rate()
+def build_rates(PD, LGD=0.75, n_buckets=5):
+    """Helper function to build interest rates for each client based on PD and risk premium."""
+    df = interest_rate_creation(PD * LGD, PD)
+    df = discretize_into_buckets(df, n_buckets=n_buckets)
+    return df

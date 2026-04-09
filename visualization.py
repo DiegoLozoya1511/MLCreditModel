@@ -177,7 +177,24 @@ def plot_confusion_matrix(predicted: np.ndarray, real: pd.Series, set: str) -> s
     return class_report
 
 
-def portfolio_metrics(EAD: pd.Series, expected_pnl: np.ndarray, realized_pnl: np.ndarray, pred: np.ndarray, y_true: np.ndarray, set_name: str, clip_percentile: float = 0.99) -> None:
+def interest_rate_summary(r_summary: pd.DataFrame, total_interest_rates: pd.DataFrame) -> None:
+    """
+    Print a summary of interest rate buckets and their statistics.
+
+    Parameters:
+        r_summary: DataFrame containing summary statistics for each interest rate bucket (e.g., mean PD, mean risk premium, mean total interest rate).
+        total_interest_rates: DataFrame containing the total interest rates and their components for all clients, used to calculate overall means.
+    """
+    print(f"\nInterest Rate Bucket Summary:\n{'─' * 105}")
+    print(r_summary.to_string(index=False))
+    print(f'\nMean PD: {total_interest_rates["PD_i"].mean():.2%}')
+    print(
+        f'Mean Risk Premium: {(total_interest_rates["Risk Premium"]).mean():.2%}')
+    print(
+        f'Mean Interest Rate: {total_interest_rates["BucketRate"].mean():.2%}')
+
+
+def portfolio_metrics(EAD: pd.Series, benchmark_pnl: np.ndarray, realized_pnl: np.ndarray, pred: np.ndarray, y_true: np.ndarray, set_name: str) -> None:
     """
     Compute and print portfolio-level metrics for credit model evaluation.
 
@@ -188,46 +205,44 @@ def portfolio_metrics(EAD: pd.Series, expected_pnl: np.ndarray, realized_pnl: np
         pred         : lending decision (1=lend, 0=reject), shape (n_clients,)
         y_true       : actual default outcome (1=default, 0=paid), shape (n_clients,)
         set_name     : label for the dataset (e.g., 'Train', 'Validation', 'Test')
-        clip_percentile : float between 0 and 1 to specify the percentile range for clipping extreme PnL values (default is 0.99 to keep 99% of the data)
     """
-    EAD    = np.asarray(EAD,    dtype=float)
-    pred   = np.asarray(pred,   dtype=int)
+    EAD = np.asarray(EAD,    dtype=float)
+    pred = np.asarray(pred,   dtype=int)
     y_true = np.asarray(y_true, dtype=int)
 
-    # Clip to percentile range to remove extreme tails
-    upper = np.percentile(
-        np.concatenate([expected_pnl, realized_pnl]),
-        clip_percentile * 100
-    )
-    lower = np.percentile(
-        np.concatenate([expected_pnl, realized_pnl]),
-        (1 - clip_percentile) * 100
-    )
-
-    expected_clipped = expected_pnl.clip(lower, upper)
-    realized_clipped = realized_pnl.clip(lower, upper)
-    
-    total_clients    = len(pred)
+    total_clients = len(pred)
     clients_approved = (pred == 1).sum()
-    approval_rate    = clients_approved / total_clients
+    approval_rate = clients_approved / total_clients
 
-    defaulters   = ((pred == 1) & (y_true == 1)).sum()
+    defaulters = ((pred == 1) & (y_true == 1)).sum()
     default_rate = defaulters / clients_approved if clients_approved > 0 else 0.0
-    
-    total_expected_pnl = expected_clipped.sum()
-    total_realized_pnl = realized_clipped.sum()
-    pnl_rate = total_realized_pnl / total_expected_pnl if total_expected_pnl != 0 else 0.0
-    
-    capital_total    = EAD.sum()
+
+    total_benchmark_pnl = benchmark_pnl.sum()
+    total_realized_pnl = realized_pnl.sum()
+    pnl_uplift = (total_realized_pnl - total_benchmark_pnl) / \
+        abs(total_benchmark_pnl) if total_benchmark_pnl != 0 else 0.0
+
+    capital_total = EAD.sum()
     capital_deployed = EAD[pred == 1].sum()
-    capital_rate     = capital_deployed / capital_total
+    capital_rate = capital_deployed / capital_total
+
+    benchmark_roc = total_benchmark_pnl / capital_total if capital_total > 0 else 0.0
+    realized_roc = total_realized_pnl / \
+        capital_deployed if capital_deployed > 0 else 0.0
+
+    bench_str = f"${total_benchmark_pnl:,.2f}"
+    realized_str = f"${total_realized_pnl:,.2f}"
+
+    W = 13  # value column width
 
     print(f"\n{set_name} Portfolio Metrics")
-    print(f"{'─' * 60}")
-    print(f"Total clients:      {total_clients:>12,}")
-    print(f"Clients approved:   {clients_approved:>12,}    ({approval_rate:.2%})")
-    print(f"Defaulters:         {defaulters:>12,}    ({default_rate:.2%} of approved)")
-    print(f"Total expected PnL: {'$' + f'{total_expected_pnl:>12,.2f}':>13}")
-    print(f"Total realized PnL: {'$' + f'{total_realized_pnl:>12,.2f}':>13} ({pnl_rate:.2%} of expected)")
-    print(f"Capital total:      {capital_total:>12,.0f}")
-    print(f"Capital deployed:   {capital_deployed:>12,.0f}    ({capital_rate:.2%})")
+    print(f"{'─' * 72}")
+    print(f"{'Total clients:':<30} {total_clients:>{W},}")
+    print(f"{'Clients approved:':<30} {clients_approved:>{W},}     ({approval_rate:.2%})")
+    print(f"{'Defaulters:':<30} {defaulters:>{W},}     ({default_rate:.2%} of approved)")
+    print(f"{'Benchmark PnL (lend all):':<30} {bench_str:>{W+3}}")
+    print(f"{'Realized PnL (model):':<30} {realized_str:>{W+3}}  ({pnl_uplift:+.2%} vs benchmark)")
+    print(f"{'Capital total:':<30} {capital_total:>{W},.0f}")
+    print(f"{'Capital deployed:':<30} {capital_deployed:>{W},.0f}     ({capital_rate:.2%})")
+    print(f"{'Benchmark Return on Capital:':<30} {benchmark_roc:>{W+4}.2%}")
+    print(f"{'Realized Return on Capital:':<30} {realized_roc:>{W+4}.2%}")

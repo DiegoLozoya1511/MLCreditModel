@@ -19,11 +19,12 @@ def compute_thresholds(r: pd.Series, RV: pd.Series, EAD: pd.Series, LGD: float =
     """
     numerator = RV * r
     denominator = RV * r + EAD * LGD
-    thresholds = (numerator / denominator).clip(0, 1)
-    return thresholds
+    thresholds = np.divide(numerator, denominator, out=np.zeros_like(
+        numerator, dtype=float), where=denominator != 0)
+    return np.clip(thresholds, 0, 1)
 
 
-def get_predictions(model, X: pd.DataFrame, r: pd.Series, RV: pd.Series, EAD: pd.Series, LGD: float = LGD) -> tuple[np.ndarray, np.ndarray]:
+def get_predictions(model, X: pd.DataFrame, r: pd.Series, RV: pd.Series, EAD: pd.Series, LGD: float = LGD) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Get predicted probabilities and classifications based on the model and thresholds.
 
@@ -52,28 +53,6 @@ def get_predictions(model, X: pd.DataFrame, r: pd.Series, RV: pd.Series, EAD: pd
     return probabilities, predictions, thresholds
 
 
-def expected_pnl(PD: np.ndarray, r: pd.Series, RV: pd.Series, EAD: pd.Series, LGD: float = LGD) -> np.ndarray:
-    """
-    Compute expected PnL per client.
-
-    PnL = pred * [(1 - PD) * RV * r - PD * EAD * LGD]
-
-    Parameters:
-        PD  : predicted default probabilities, shape (n_clients,)
-        r   : client-level interest rate,      shape (n_clients,)
-        RV  : revolving balance (BILL_AMT1 - PAY_AMT1), shape (n_clients,)
-        EAD : exposure at default (BILL_AMT1), shape (n_clients,)
-        LGD : loss given default (constant),   default 0.75
-
-    Returns:
-        pnl : np.ndarray, shape (n_clients,)
-    """
-    expected_revenue = (1 - PD) * RV * r
-    expected_loss = PD * EAD * LGD
-
-    return expected_revenue - expected_loss
-
-
 def realized_pnl(r: pd.Series, RV: pd.Series, EAD: pd.Series, pred: np.ndarray, y: pd.Series, LGD: float = LGD) -> np.ndarray:
     """
     Compute realized PnL per client.
@@ -89,8 +68,26 @@ def realized_pnl(r: pd.Series, RV: pd.Series, EAD: pd.Series, pred: np.ndarray, 
     Returns:
         pnl : np.ndarray, shape (n_clients,)
     """
-    pnl = np.where(pred == 0, 0,           # didn't lend
-                   np.where(y == 0,  RV * r,      # lent → no default
-                            -EAD * LGD))  # lent → default
+    pnl = np.where(pred == 0, 0,            # didn't lend
+                   np.where(y == 0, RV * r,  # lent → no default
+                            -EAD * LGD))    # lent → default
 
     return pnl
+
+
+def benchmark_pnl(r: pd.Series, RV: pd.Series, EAD: pd.Series, y: pd.Series) -> np.ndarray:
+    """
+    Compute realized PnL per client under a benchmark strategy of lending to everyone.
+
+    Parameters:
+        r    : client-level annual interest rate, shape (n_clients,)
+        RV   : revolving balance (BILL_AMT1 - PAY_AMT1), shape (n_clients,)
+        EAD  : exposure at default (BILL_AMT1),   shape (n_clients,)
+        y    : actual default outcome (1=default, 0=paid), shape (n_clients,)
+
+    Returns:
+        pnl : np.ndarray, shape (n_clients,)
+    """
+    pred_all = np.ones(len(y), dtype=int)
+
+    return realized_pnl(r, RV, EAD, pred_all, y)

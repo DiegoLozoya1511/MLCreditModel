@@ -1,9 +1,8 @@
 import joblib
 import pandas as pd
 
-from sklearn.calibration import CalibratedClassifierCV
-
 from xgboost import XGBClassifier
+from sklearn.calibration import CalibratedClassifierCV
 
 
 def model_fitter(X_train: pd.DataFrame, y_train: pd.Series) -> None:
