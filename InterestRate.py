@@ -26,9 +26,9 @@ class RatePricer:
     # Fixed macro rate components (annualized)
     _BASE_RATE = 0.025
     _INFLATION_RATE = 0.045
-    _LIQUIDITY_PREMIUM = 0.050
-    _ADMIN_COSTS = 0.070
-    _OPERATING_COSTS = 0.050
+    _LIQUIDITY_PREMIUM = 0.002
+    _ADMIN_COSTS = 0.060
+    _OPERATING_COSTS = 0.030
 
     _REAL_RATE = _BASE_RATE - _INFLATION_RATE
 
