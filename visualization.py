@@ -76,6 +76,7 @@ def plot_interest_rate_distribution(interest_rate_df: pd.DataFrame) -> None:
     plt.xlabel('Total Interest Rate')
     plt.ylabel('Density')
     plt.legend()
+    plt.savefig("Graphs/interest_rate_distribution.png", dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -103,6 +104,7 @@ def plot_thresholds_distribution(thresholds: pd.Series, y_proba: np.ndarray, set
     plt.xlabel('Probability')
     plt.ylabel('Density')
     plt.legend()
+    plt.savefig(f"Graphs/{set_name}_thresholds_distribution.png", dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -135,6 +137,7 @@ def plot_roc_curve_train_val(y_true_train: np.ndarray, y_proba_train: np.ndarray
     plt.ylabel('True Positive Rate')
     plt.title('Train and Validation ROC Curves')
     plt.legend()
+    plt.savefig("Graphs/roc_curve_train_val.png", dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -158,6 +161,7 @@ def plot_roc_curve_test(y_true: np.ndarray, y_proba: np.ndarray) -> None:
     plt.ylabel('True Positive Rate')
     plt.title('Test ROC Curve')
     plt.legend()
+    plt.savefig("Graphs/roc_curve_test.png", dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -190,6 +194,7 @@ def plot_confusion_matrix(predicted: np.ndarray, real: pd.Series, set: str) -> s
     ax.set_title(f'{set} Confusion Matrix - Accuracy: {acc:.4f}')
     ax.grid(False)
 
+    plt.savefig(f"Graphs/{set}_confusion_matrix.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     return class_report
