@@ -1,124 +1,128 @@
-import joblib
 import pandas as pd
 
-from visualization import *
-from utils import split_data, val_eval_cal_split
-from fitter import model_fitter, model_calibrator
-from InterestRate import build_rates, bucket_summary
-from CreditModel import get_predictions, realized_pnl, benchmark_pnl
+from utils import DataPipeline
+from fitter import ModelFitter
+from InterestRate import RatePricer
+from CreditModel import CreditPortfolio
+from visualization import (
+    plot_interest_rate_distribution,
+    plot_thresholds_distribution,
+    plot_roc_curve_train_val,
+    plot_confusion_matrix,
+    interest_rate_summary,
+    portfolio_metrics,
+)
 
 
 def main():
-    # === Load datasets ===
-    data = pd.read_csv('Data/UCI_Credit_Card.csv')
 
-    # === Define target and features ===
-    target = 'default.payment.next.month'
+    # ==========================================================================
+    # 1. DATA
+    # ==========================================================================
+
+    data = pd.read_csv("Data/UCI_Credit_Card.csv")
+    target = "default.payment.next.month"
+
     y = data[target]
-    X = data.copy().drop(columns=['ID', target])
+    X = data.drop(columns=["ID", target])
 
-    # === Data preprocessing ===
-    # Split data (X, y, EAD & RB) into train, validation and test sets.
-    results = split_data(X, y)
+    # Split into train / val_eval / val_cal / test.
+    # EAD and RB are derived internally from BILL_AMT1 and PAY_AMT1.
+    pipeline = DataPipeline().fit_transform(X, y)
 
-    X_train, X_val, X_test = results["X_train"], results["X_val"], results["X_test"]
-    y_train, y_val, y_test = results["y_train"], results["y_val"], results["y_test"]
-    EAD_train, EAD_val, EAD_test = results["EAD_train"], results["EAD_val"], results["EAD_test"]
-    RB_train, RB_val, RB_test = results["RB_train"], results["RB_val"], results["RB_test"]
+    # ==========================================================================
+    # 2. MODEL
+    # ==========================================================================
 
-    # Split validation set into evaluation and calibration subsets for proper model calibration and evaluation without data leakage.
-    val_results = val_eval_cal_split(X_val, y_val, EAD_val, RB_val)
-
-    X_val_eval, X_val_cal = val_results["X_val_eval"], val_results["X_val_cal"]
-    y_val_eval, y_val_cal = val_results["y_val_eval"], val_results["y_val_cal"]
-    EAD_val_eval = val_results["EAD_val_eval"]
-    RB_val_eval = val_results["RB_val_eval"]
-
-    # === Model fitting ===
-    # Change RETAIN to True to fit and calibrate the model. Set to False to load pre-fitted and calibrated model from disk.
+    # Set RETRAIN = True to fit and calibrate from scratch.
+    # Set RETRAIN = False to load the persisted calibrated model from disk.
     RETRAIN = False
+
+    fitter = ModelFitter()
     if RETRAIN:
-        model_fitter(X_train, y_train)
-        model_calibrator(X_val_cal, y_val_cal)
+        fitter.fit(pipeline.X_train, pipeline.y_train) \
+              .calibrate(pipeline.X_val_cal, pipeline.y_val_cal)
+    else:
+        fitter.load()
 
-    # === Credit Model ===
-    # Load fitted and calibrated model
-    model = joblib.load('Model/xgb_model_calibrated.pkl')
+    # ==========================================================================
+    # 3. INTEREST RATES
+    # ==========================================================================
 
-    # --- Get PD ---
-    PD_train = model.predict_proba(X_train)[:, 1]
-    PD_val = model.predict_proba(X_val_eval)[:, 1]
-    PD_test = model.predict_proba(X_test)[:, 1]
+    # Price each split independently to avoid information leakage across sets.
+    pricer_train = RatePricer().price(pd.Series(fitter.predict_proba(pipeline.X_train)))
+    pricer_val = RatePricer().price(pd.Series(fitter.predict_proba(pipeline.X_val_eval)))
+    pricer_test = RatePricer().price(pd.Series(fitter.predict_proba(pipeline.X_test)))
 
-    # --- Get interest rates ---
-    r1 = build_rates(PD_train)
-    r_train = r1['BucketRate']
+    # Aggregate rates and summary across all splits for reporting.
+    total_rates, r_summary = RatePricer.combined_summary(
+        [pricer_train, pricer_val, pricer_test]
+    )
 
-    r2 = build_rates(PD_val)
-    r_val_eval = r2['BucketRate']
+    # ==========================================================================
+    # 4. PORTFOLIO — TRAIN
+    # ==========================================================================
 
-    r3 = build_rates(PD_test)
-    r_test = r3['BucketRate']
+    train_portfolio = (
+        CreditPortfolio()
+        .predict(fitter, pipeline.X_train, pricer_train.bucket_rates, pipeline.RB_train, pipeline.EAD_train)
+        .compute_pnl(pricer_train.bucket_rates, pipeline.RB_train, pipeline.EAD_train, pipeline.y_train)
+        .compute_benchmark(pricer_train.bucket_rates, pipeline.RB_train, pipeline.EAD_train, pipeline.y_train)
+    )
 
-    total_interest_rates = pd.concat([r1, r2, r3])
-    r_summary = bucket_summary(total_interest_rates)
+    # ==========================================================================
+    # 5. PORTFOLIO — VALIDATION
+    # ==========================================================================
 
-    # --- Predictions ---
-    train_probabilities, train_predictions, train_thresholds = get_predictions(
-        model, X_train, r_train, RB_train, EAD_train)
-    val_probabilities, val_predictions, val_thresholds = get_predictions(
-        model, X_val_eval, r_val_eval, RB_val_eval, EAD_val_eval)
-    # test_probabilities, test_predictions, test_thresholds = get_predictions(model, X_test, r_test, RB_test, EAD_test)
+    val_portfolio = (
+        CreditPortfolio()
+        .predict(fitter, pipeline.X_val_eval, pricer_val.bucket_rates, pipeline.RB_val_eval, pipeline.EAD_val_eval)
+        .compute_pnl(pricer_val.bucket_rates, pipeline.RB_val_eval, pipeline.EAD_val_eval, pipeline.y_val_eval)
+        .compute_benchmark(pricer_val.bucket_rates, pipeline.RB_val_eval, pipeline.EAD_val_eval, pipeline.y_val_eval)
+    )
 
-    # --- Realized PnL Calculation ---
-    train_realized_pnl = realized_pnl(
-        r_train, RB_train, EAD_train, train_predictions, y_train)
-    val_realized_pnl = realized_pnl(
-        r_val_eval, RB_val_eval, EAD_val_eval, val_predictions, y_val_eval)
-    # test_realized_pnl = realized_pnl(r_test, RB_test, EAD_test, test_predictions, y_test)
+    # ==========================================================================
+    # 6. RESULTS
+    # ==========================================================================
 
-    # --- Benchmark PnL Calculation ---
-    train_benchmark_pnl = benchmark_pnl(r_train, RB_train, EAD_train, y_train)
-    val_benchmark_pnl = benchmark_pnl(
-        r_val_eval, RB_val_eval, EAD_val_eval, y_val_eval)
-    # test_benchmark_pnl = benchmark_pnl(r_test, RB_test, EAD_test, y_test)
+    # --- Interest rates ---
+    plot_interest_rate_distribution(total_rates)
+    interest_rate_summary(r_summary, total_rates)
 
-    # === Results ===
-    # --- Plots ---
-    plot_interest_rate_distribution(total_interest_rates)
-
+    # --- Threshold distributions ---
     plot_thresholds_distribution(
-        train_thresholds, train_probabilities, 'Train')
+        train_portfolio.thresholds, train_portfolio.probabilities, "Train")
     plot_thresholds_distribution(
-        val_thresholds, val_probabilities, 'Validation')
-    # plot_thresholds_distribution(test_thresholds, test_probabilities, 'Test')
+        val_portfolio.thresholds,   val_portfolio.probabilities,   "Validation")
 
-    plot_roc_curve_train_val(y_train, train_probabilities,
-                             y_val_eval, val_probabilities)
-    # plot_roc_curve_test(y_test, test_probabilities)
+    # --- ROC curves ---
+    plot_roc_curve_train_val(
+        pipeline.y_train,    train_portfolio.probabilities,
+        pipeline.y_val_eval, val_portfolio.probabilities,
+    )
 
+    # --- Confusion matrices ---
     train_class_report = plot_confusion_matrix(
-        train_predictions, y_train, 'Train')
+        train_portfolio.predictions, pipeline.y_train,    "Train")
     val_class_report = plot_confusion_matrix(
-        val_predictions, y_val_eval, 'Validation')
-    # test_class_report = plot_confusion_matrix(test_predictions, y_test, 'Test')
+        val_portfolio.predictions,   pipeline.y_val_eval, "Validation")
 
-    # --- Prints ---
-    # Interest rate summary
-    interest_rate_summary(r_summary, total_interest_rates)
-
-    # Classification reports
+    # --- Classification reports ---
     print(f"\nTrain Classification Report:\n{'─' * 55}\n{train_class_report}")
     print(
         f"\nValidation Classification Report:\n{'─' * 55}\n{val_class_report}")
-    # print(f"\nTest Classification Report:\n{'─' * 60}\n{test_class_report}")
 
-    # Portfolio-level metrics
-    portfolio_metrics(EAD_train, train_benchmark_pnl,
-                      train_realized_pnl, train_predictions, y_train, 'Train')
-    portfolio_metrics(EAD_val_eval, val_benchmark_pnl,
-                      val_realized_pnl, val_predictions, y_val_eval, 'Validation')
-    # portfolio_metrics(EAD_test, test_expected_pnl, test_realized_pnl, test_predictions, y_test, 'Test')
+    # --- Portfolio metrics ---
+    portfolio_metrics(
+        pipeline.EAD_train, train_portfolio.benchmark_pnl,
+        train_portfolio.realized_pnl, train_portfolio.predictions,
+        pipeline.y_train, "Train",
+    )
+    portfolio_metrics(
+        pipeline.EAD_val_eval, val_portfolio.benchmark_pnl,
+        val_portfolio.realized_pnl, val_portfolio.predictions,
+        pipeline.y_val_eval, "Validation",
+    )
 
     print()
 

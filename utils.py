@@ -1,117 +1,141 @@
 import pandas as pd
+
 from sklearn.model_selection import train_test_split
 
 
-def split_data(
-    X: pd.DataFrame,
-    y: pd.Series,
-    test_size: float = 0.05,
-    val_size: float = 0.25,
-    random_state: int = 42,
-) -> dict:
+class DataPipeline:
     """
-    Split data into train/validation/test.
+    Handles stratified train / validation / test splitting for the credit
+    scoring pipeline.
 
-    Parameters:
-        X            : pd.DataFrame - Feature matrix.
-        y            : pd.Series - Target vector.
-        test_size    : float - Proportion of the full dataset reserved for test.
-        val_size     : float - Proportion of the full dataset reserved for validation.
-        random_state : int - Random seed for reproducibility.
+    The validation set is further divided into an evaluation subset (used
+    for model assessment) and a calibration subset (used for probability
+    calibration), keeping both partitions leak-free.
 
-    Returns:
-        dict with keys:
-            X_train, X_val, X_test       -> np.ndarray
-            y_train, y_val, y_test       -> np.ndarray
-            EAD_train, EAD_val, EAD_test -> np.ndarray
-            RB_train, RB_val, RB_test    -> np.ndarray
+    Attributes
+    ----------
+    X_train, X_val_eval, X_val_cal, X_test : pd.DataFrame
+    y_train, y_val_eval, y_val_cal, y_test : np.ndarray
+    EAD_train, EAD_val_eval, EAD_val_cal, EAD_test : np.ndarray
+    RB_train,  RB_val_eval,  RB_val_cal,  RB_test  : np.ndarray
     """
 
-    # Split  (train | val | test)
-    val_ratio_adjusted = val_size / (1.0 - test_size)
+    def __init__(
+        self,
+        test_size: float = 0.05,
+        val_size: float = 0.25,
+        eval_size: float = 0.30,
+        random_state: int = 42,
+    ):
+        """
+        Parameters
+        ----------
+        test_size    : Proportion of the full dataset reserved for test.
+        val_size     : Proportion of the full dataset reserved for validation.
+        eval_size    : Proportion of the validation set reserved for evaluation.
+                       The remainder becomes the calibration subset.
+        random_state : Random seed for reproducibility.
+        """
+        self.test_size = test_size
+        self.val_size = val_size
+        self.eval_size = eval_size
+        self.random_state = random_state
 
-    # Pass r alongside X and y to guarantee alignment
-    X_temp, X_test, y_temp, y_test = train_test_split(
-        X, y,
-        test_size=test_size,
-        stratify=y,
-        random_state=random_state,
-    )
+        # Public attributes populated by fit_transform()
+        self.X_train = self.X_val_eval = self.X_val_cal = self.X_test = None
+        self.y_train = self.y_val_eval = self.y_val_cal = self.y_test = None
+        self.EAD_train = self.EAD_val_eval = self.EAD_val_cal = self.EAD_test = None
+        self.RB_train = self.RB_val_eval = self.RB_val_cal = self.RB_test = None
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_temp, y_temp,
-        test_size=val_ratio_adjusted,
-        stratify=y_temp,
-        random_state=random_state,
-    )
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-    # Get splited EAD
-    train_EAD = X_train['BILL_AMT1']
-    val_EAD = X_val['BILL_AMT1']
-    test_EAD = X_test['BILL_AMT1']
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series) -> "DataPipeline":
+        """
+        Execute the full split pipeline and populate all attributes.
 
-    # Get splitted Revolving Balance (RV)
-    train_RB = (X_train['BILL_AMT1'] - X_train['PAY_AMT1']).clip(lower=0)
-    val_RB = (X_val['BILL_AMT1'] - X_val['PAY_AMT1']).clip(lower=0)
-    test_RB = (X_test['BILL_AMT1'] - X_test['PAY_AMT1']).clip(lower=0)
+        Parameters
+        ----------
+        X : Feature matrix. Must contain 'BILL_AMT1' and 'PAY_AMT1'.
+        y : Binary target vector (1 = default).
 
-    print(
-        f"\nSizes — train: {len(y_train)}, val: {len(y_val)}, test: {len(y_test)}"
-    )
+        Returns
+        -------
+        self : Enables method chaining.
+        """
+        EAD = X["BILL_AMT1"]
+        RB = (X["BILL_AMT1"] - X["PAY_AMT1"]).clip(lower=0)
 
-    return {
-        "X_train":   X_train,
-        "X_val":     X_val,
-        "X_test":    X_test,
-        "y_train":   y_train.values,
-        "y_val":     y_val.values,
-        "y_test":    y_test.values,
-        "EAD_train": train_EAD.values,
-        "EAD_val":   val_EAD.values,
-        "EAD_test":  test_EAD.values,
-        "RB_train":  train_RB.values,
-        "RB_val":    val_RB.values,
-        "RB_test":   test_RB.values,
-    }
+        X_train, X_val, X_test, y_train, y_val, y_test, EAD_train, EAD_val, EAD_test, RB_train, RB_val, RB_test = \
+            self._primary_split(X, y, EAD, RB)
 
+        X_val_eval, X_val_cal, y_val_eval, y_val_cal, EAD_val_eval, EAD_val_cal, RB_val_eval, RB_val_cal = \
+            self._val_split(X_val, y_val, EAD_val, RB_val)
 
-def val_eval_cal_split(X_val: pd.DataFrame, y_val: pd.Series, EAD_val: pd.Series, RB_val: pd.Series, val_size: float = 0.3, random_state: int = 42) -> dict:
-    """
-    Split the validation set into a smaller validation set for model evaluation and a calibration set for probability calibration.
+        self.X_train,   self.X_val_eval,   self.X_val_cal,   self.X_test = X_train,   X_val_eval,   X_val_cal,   X_test
+        self.y_train,   self.y_val_eval,   self.y_val_cal,   self.y_test = y_train,   y_val_eval,   y_val_cal,   y_test
+        self.EAD_train, self.EAD_val_eval, self.EAD_val_cal, self.EAD_test = EAD_train, EAD_val_eval, EAD_val_cal, EAD_test
+        self.RB_train,  self.RB_val_eval,  self.RB_val_cal,  self.RB_test = RB_train,  RB_val_eval,  RB_val_cal,  RB_test
 
-    Parameters:
-        X_val : pd.DataFrame - Validation features.
-        y_val : pd.Series - Validation target variable.
-        EAD_val : pd.Series - Validation exposure at default.
-        RB_val : pd.Series - Validation revolving balance.
-        val_size : float - Proportion of the original validation set to use for model evaluation (default 0.5).
-        random_state : int - Random seed for reproducibility.
+        self._print_summary()
+        return self
 
-    Returns:
-        dict with keys:
-            X_val_eval, y_val_eval, EAD_val_eval, RB_val_eval   -> subsets for model evaluation
-            X_val_cal, y_val_cal, EAD_val_cal, RB_val_cal -> subsets for calibration
-    """
-    eval_ratio_adjusted = val_size
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
-    X_val_eval, X_val_cal, y_val_eval, y_val_cal, EAD_val_eval, EAD_val_cal, RB_val_eval, RB_val_cal = train_test_split(
-        X_val, y_val, EAD_val, RB_val,
-        test_size=eval_ratio_adjusted,
-        stratify=y_val,
-        random_state=random_state,
-    )
+    def _primary_split(self, X, y, EAD, RB):
+        """Train / val / test split with stratification."""
+        val_ratio_adjusted = self.val_size / (1.0 - self.test_size)
 
-    print(
-        f"\nValidation split — Eval: {len(y_val_eval)}, Cal: {len(y_val_cal)}"
-    )
+        X_temp, X_test, y_temp, y_test, EAD_temp, EAD_test, RB_temp, RB_test = \
+            train_test_split(
+                X, y, EAD, RB,
+                test_size=self.test_size,
+                stratify=y,
+                random_state=self.random_state,
+            )
 
-    return {
-        "X_val_eval": X_val_eval,
-        "y_val_eval": y_val_eval,
-        "EAD_val_eval": EAD_val_eval,
-        "RB_val_eval": RB_val_eval,
-        "X_val_cal": X_val_cal,
-        "y_val_cal": y_val_cal,
-        "EAD_val_cal": EAD_val_cal,
-        "RB_val_cal": RB_val_cal,
-    }
+        X_train, X_val, y_train, y_val, EAD_train, EAD_val, RB_train, RB_val = \
+            train_test_split(
+                X_temp, y_temp, EAD_temp, RB_temp,
+                test_size=val_ratio_adjusted,
+                stratify=y_temp,
+                random_state=self.random_state,
+            )
+
+        return (
+            X_train, X_val, X_test,
+            y_train.values, y_val.values, y_test.values,
+            EAD_train.values, EAD_val.values, EAD_test.values,
+            RB_train.values, RB_val.values, RB_test.values,
+        )
+
+    def _val_split(self, X_val, y_val, EAD_val, RB_val):
+        """Split the validation set into evaluation and calibration subsets."""
+        X_val_eval, X_val_cal, y_val_eval, y_val_cal, EAD_val_eval, EAD_val_cal, RB_val_eval, RB_val_cal = \
+            train_test_split(
+                X_val, y_val, EAD_val, RB_val,
+                test_size=self.eval_size,
+                stratify=y_val,
+                random_state=self.random_state,
+            )
+
+        return (
+            X_val_eval, X_val_cal,
+            y_val_eval, y_val_cal,
+            EAD_val_eval, EAD_val_cal,
+            RB_val_eval, RB_val_cal,
+        )
+
+    def _print_summary(self) -> None:
+        n_train = len(self.y_train)
+        n_eval = len(self.y_val_eval)
+        n_cal = len(self.y_val_cal)
+        n_test = len(self.y_test)
+        print(
+            f"\nSizes — train: {n_train}, "
+            f"val_eval: {n_eval}, val_cal: {n_cal}, "
+            f"test: {n_test}"
+        )
