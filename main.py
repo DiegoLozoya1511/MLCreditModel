@@ -10,6 +10,7 @@ from visualization import (
     plot_roc_curve_train_val,
     plot_confusion_matrix,
     interest_rate_summary,
+    plot_roc_curve_test,
     portfolio_metrics,
 )
 
@@ -80,9 +81,20 @@ def main():
         .compute_pnl(pricer_val.bucket_rates, pipeline.RB_val_eval, pipeline.EAD_val_eval, pipeline.y_val_eval)
         .compute_benchmark(pricer_val.bucket_rates, pipeline.RB_val_eval, pipeline.EAD_val_eval, pipeline.y_val_eval)
     )
+    
+    # ==========================================================================
+    # 6. PORTFOLIO — TEST
+    # ==========================================================================
+    
+    test_portfolio = (
+        CreditPortfolio()
+        .predict(fitter, pipeline.X_test, pricer_test.bucket_rates, pipeline.RB_test, pipeline.EAD_test)
+        .compute_pnl(pricer_test.bucket_rates, pipeline.RB_test, pipeline.EAD_test, pipeline.y_test)
+        .compute_benchmark(pricer_test.bucket_rates, pipeline.RB_test, pipeline.EAD_test, pipeline.y_test)
+    )
 
     # ==========================================================================
-    # 6. RESULTS
+    # 7. RESULTS
     # ==========================================================================
 
     # --- Interest rates ---
@@ -94,11 +106,16 @@ def main():
         train_portfolio.thresholds, train_portfolio.probabilities, "Train")
     plot_thresholds_distribution(
         val_portfolio.thresholds,   val_portfolio.probabilities,   "Validation")
+    plot_thresholds_distribution(
+        test_portfolio.thresholds,  test_portfolio.probabilities,  "Test")
 
     # --- ROC curves ---
     plot_roc_curve_train_val(
         pipeline.y_train,    train_portfolio.probabilities,
         pipeline.y_val_eval, val_portfolio.probabilities,
+    )
+    plot_roc_curve_test(
+        pipeline.y_test, test_portfolio.probabilities,
     )
 
     # --- Confusion matrices ---
@@ -106,11 +123,14 @@ def main():
         train_portfolio.predictions, pipeline.y_train,    "Train")
     val_class_report = plot_confusion_matrix(
         val_portfolio.predictions,   pipeline.y_val_eval, "Validation")
+    test_class_report = plot_confusion_matrix(
+        test_portfolio.predictions,  pipeline.y_test,     "Test")
 
     # --- Classification reports ---
     print(f"\nTrain Classification Report:\n{'─' * 55}\n{train_class_report}")
     print(
         f"\nValidation Classification Report:\n{'─' * 55}\n{val_class_report}")
+    print(f"\nTest Classification Report:\n{'─' * 55}\n{test_class_report}")
 
     # --- Portfolio metrics ---
     portfolio_metrics(
@@ -122,6 +142,11 @@ def main():
         pipeline.EAD_val_eval, val_portfolio.benchmark_pnl,
         val_portfolio.realized_pnl, val_portfolio.predictions,
         pipeline.y_val_eval, "Validation",
+    )
+    portfolio_metrics(
+        pipeline.EAD_test, test_portfolio.benchmark_pnl,
+        test_portfolio.realized_pnl, test_portfolio.predictions,
+        pipeline.y_test, "Test",
     )
 
     print()
