@@ -64,7 +64,7 @@ class DataPipeline:
         -------
         self : Enables method chaining.
         """
-        EAD = X["BILL_AMT1"]
+        EAD = X["BILL_AMT1"].clip(lower=0)
         RB = (X["BILL_AMT1"] - X["PAY_AMT1"]).clip(lower=0)
 
         X_train, X_val, X_test, y_train, y_val, y_test, EAD_train, EAD_val, EAD_test, RB_train, RB_val, RB_test = \

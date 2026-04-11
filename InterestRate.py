@@ -23,12 +23,12 @@ class RatePricer:
                  statistics. Populated after calling summarize().
     """
 
-    # Fixed macro rate components (annualized)
-    _BASE_RATE = 0.025
-    _INFLATION_RATE = 0.045
-    _LIQUIDITY_PREMIUM = 0.002
-    _ADMIN_COSTS = 0.060
-    _OPERATING_COSTS = 0.030
+    # Fixed macro rate components
+    _BASE_RATE = 0.0700
+    _INFLATION_RATE = 0.0450
+    _LIQUIDITY_PREMIUM = 0.0030
+    _ADMIN_COSTS = 0.0500
+    _MARGIN_SPREAD = 0.0350
 
     _REAL_RATE = _BASE_RATE - _INFLATION_RATE
 
@@ -163,7 +163,7 @@ class RatePricer:
             "Risk Premium":      risk_premium.values,
             "Liquidity Premium": self._LIQUIDITY_PREMIUM,
             "Admin Costs":       self._ADMIN_COSTS,
-            "Operating Costs":   self._OPERATING_COSTS,
+            "Margin Spread":     self._MARGIN_SPREAD,
         })
         df["TotalInterestRate"] = df.sum(axis=1)
         df["PD_i"] = PD.values
