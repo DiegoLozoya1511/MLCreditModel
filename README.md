@@ -73,7 +73,7 @@ Isotonic calibration via `CalibratedClassifierCV` (cv=5) fitted on the dedicated
 
 Client-level rates are decomposed additively:
 
-$$r_i = r_f + \pi + LP + AC + MG + PD_i \times LGD$$
+$$r_i = r_r + \pi + LP + AC + MG + PD_i \times LGD$$
 
 | Component | Value |
 |---|---|
@@ -121,6 +121,7 @@ The model maintains a spread of approximately 630 basis points over the benchmar
 
 ## Project Structure
 
+```
 MLCreditModel/
 │
 ├── Data/
@@ -137,6 +138,7 @@ MLCreditModel/
 ├── visualization.py
 ├── main.py
 └── README.md
+```
 
 ---
 
