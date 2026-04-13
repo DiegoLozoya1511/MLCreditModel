@@ -131,13 +131,12 @@ MLCreditModel/
 │   ├── xgb_model.pkl
 │   └── xgb_model_calibrated.pkl
 │
-├── DataPipeline.py
-├── ModelFitter.py
-├── RatePricer.py
+├── DataSplitter.py
+├── fitter.py
+├── InterestRate.py
 ├── CreditModel.py
 ├── visualization.py
-├── main.py
-└── README.md
+└── main.py
 ```
 
 ---
