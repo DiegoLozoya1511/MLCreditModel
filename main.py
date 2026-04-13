@@ -1,8 +1,8 @@
 import pandas as pd
 
-from utils import DataPipeline
 from fitter import ModelFitter
 from InterestRate import RatePricer
+from DataSplitter import DataPipeline
 from CreditModel import CreditPortfolio
 from visualization import (
     plot_interest_rate_distribution,
