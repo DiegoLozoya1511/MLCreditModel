@@ -156,7 +156,7 @@ def plot_roc_curve_test(y_true: np.ndarray, y_proba: np.ndarray) -> None:
     plt.plot(fpr, tpr, color=blue_colors[-1], label=f'Test AUC = {auc:.4f}')
     plt.plot([0, 1], [0, 1], color='dimgray', linestyle='--',
              linewidth=0.8, label='Random Classifier')
-    plt.fill_between(fpr, tpr, alpha=0.15, color=blue_colors[-1])
+    plt.fill_between(fpr, tpr, alpha=0.25, color=blue_colors[-1])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Test ROC Curve')
@@ -244,10 +244,12 @@ def portfolio_metrics(EAD: pd.Series, benchmark_pnl: np.ndarray, realized_pnl: n
     total_realized_pnl = realized_pnl.sum()
     pnl_uplift = (total_realized_pnl - total_benchmark_pnl) / \
         abs(total_benchmark_pnl) if total_benchmark_pnl != 0 else 0.0
+    pnl_difference = total_realized_pnl - total_benchmark_pnl
 
     capital_total = EAD.sum()
     capital_deployed = EAD[pred == 1].sum()
     capital_rate = capital_deployed / capital_total
+    capital_difference = capital_deployed - capital_total
 
     benchmark_roc = total_benchmark_pnl / capital_total if capital_total > 0 else 0.0
     realized_roc = total_realized_pnl / \
@@ -255,17 +257,23 @@ def portfolio_metrics(EAD: pd.Series, benchmark_pnl: np.ndarray, realized_pnl: n
 
     bench_str = f"${total_benchmark_pnl:,.2f}"
     realized_str = f"${total_realized_pnl:,.2f}"
+    pnl_difference_str = f"${pnl_difference:,.2f}"
+    total_capital_str = f"${capital_total:,.2f}"
+    deployed_capital_str = f"${capital_deployed:,.2f}"
+    capital_difference_str = f"-${abs(capital_difference):,.2f}"
 
-    W = 13  # value column width
+    W = 14  # value column width
 
     print(f"\n{set_name} Portfolio Metrics")
-    print(f"{'─' * 72}")
+    print(f"{'─' * 75}")
     print(f"{'Total clients:':<30} {total_clients:>{W},}")
     print(f"{'Clients approved:':<30} {clients_approved:>{W},}     ({approval_rate:.2%})")
     print(f"{'Defaulters:':<30} {defaulters:>{W},}     ({default_rate:.2%} of approved)")
     print(f"{'Benchmark PnL (lend all):':<30} {bench_str:>{W+3}}")
     print(f"{'Realized PnL (model):':<30} {realized_str:>{W+3}}  ({pnl_uplift:+.2%} vs benchmark)")
-    print(f"{'Capital total:':<30} {capital_total:>{W},.0f}")
-    print(f"{'Capital deployed:':<30} {capital_deployed:>{W},.0f}     ({capital_rate:.2%})")
+    print(f"{'PnL difference:':<30} {pnl_difference_str:>{W+3}}")
+    print(f"{'Capital total:':<30} {total_capital_str:>{W+3}}")
+    print(f"{'Capital deployed:':<30} {deployed_capital_str:>{W+3}}  ({capital_rate:.2%} of total)")
+    print(f"{'Capital difference:':<30} {capital_difference_str:>{W+3}}")
     print(f"{'Benchmark Return on Capital:':<30} {benchmark_roc:>{W+4}.2%}")
     print(f"{'Realized Return on Capital:':<30} {realized_roc:>{W+4}.2%}")
